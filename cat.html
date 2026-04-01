@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Picky Master's Daily Serving - Ultimate Drag & Drop</title>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #EADDD7; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 1.5rem;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-15px); }
+            20%, 40%, 60%, 80% { transform: translateX(15px); }
+        }
+        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+
+        /* 纯正的水平游动动画 */
+        @keyframes swim {
+            0% { transform: translateX(150%); }
+            100% { transform: translateX(-150%); }
+        }
+        .animate-swim-1 { animation: swim 5s linear infinite; }
+        .animate-swim-2 { animation: swim 7s linear infinite 2s; } 
+        .animate-swim-3 { animation: swim 6s linear infinite 1s; } 
+
+        /* 呼吸灯动画，用于新手指导弹窗 */
+        @keyframes breathe {
+            0%, 100% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); transform: scale(1); }
+            50% { box-shadow: 0 0 35px rgba(168, 85, 247, 0.9); transform: scale(1.01); }
+        }
+        .animate-breathe { animation: breathe 2s ease-in-out infinite; }
+
+        /* 专属的显眼呼吸警告动画，带字体发光 */
+        @keyframes breathe-warning {
+            0%, 100% { box-shadow: 0 0 20px rgba(234, 179, 8, 0.6); transform: scale(1); text-shadow: 0 0 2px rgba(234,179,8,0.3); }
+            50% { box-shadow: 0 0 50px rgba(234, 179, 8, 1); transform: scale(1.02); text-shadow: 0 0 10px rgba(234,179,8,0.8); }
+        }
+        .animate-breathe-warning { animation: breathe-warning 2.5s ease-in-out infinite; }
+
+        /* 星空动态粒子上升动画 */
+        @keyframes float-particle {
+            0% { transform: translateY(10vh) translateX(0) scale(0.5) rotate(0deg); opacity: 0; }
+            20% { opacity: 0.9; }
+            80% { opacity: 0.6; }
+            100% { transform: translateY(-100vh) translateX(50px) scale(1.2) rotate(180deg); opacity: 0; }
+        }
+        /* 非圆形，采用 CSS clip-path 制作四芒星形状 */
+        .particle-star {
+            position: absolute;
+            bottom: -50px;
+            background: white;
+            clip-path: polygon(50% 0%, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0% 50%, 40% 40%);
+            animation: float-particle infinite ease-in;
+            pointer-events: none;
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
+        }
+
+        /* 胜利界面的鲜花彩带喷洒动画 */
+        @keyframes confetti-fall {
+            0% { transform: translateY(-10vh) rotate(0deg) scale(0.5); opacity: 1; }
+            100% { transform: translateY(110vh) rotate(720deg) scale(1.2); opacity: 0; }
+        }
+        .confetti-piece {
+            position: absolute;
+            top: -10%;
+            animation: confetti-fall linear forwards infinite;
+            pointer-events: none;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+
+        // --- 纯手写 SVG 图标，脱离外部依赖 ---
+        const IconHeart = ({className}) => <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>;
+        const IconClock = ({className}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>;
+        const IconActivity = ({className}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
+        const IconTv = ({className}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>;
+        const IconTrash = ({className}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
+        const IconArrowLeft = ({className}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
+        const IconInfo = ({className}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>;
+
+        // --- 数据字典：全英文命名，并为 TV Time 新增 5 种猫咪安全食物 ---
+        const CANS_DATA = [
+            { id: 1, name: 'Skipjack', type: ['protein', 'seafood'], color: '#8BA6D5', labelColor: '#E6F0FA', icon: '🐟' },
+            { id: 2, name: 'Tuna', type: ['protein', 'seafood'], color: '#748C9E', labelColor: '#E6EBEF', icon: '🐡' },
+            { id: 3, name: 'Chicken', type: ['protein'], color: '#E5C185', labelColor: '#FDF7EB', icon: '🍗' },
+            { id: 4, name: 'Beef', type: ['protein'], color: '#C67A73', labelColor: '#F8EAE9', icon: '🥩' },
+            { id: 5, name: 'Rabbit', type: ['digest'], color: '#D9A5B3', labelColor: '#FBF0F3', icon: '🐇' },
+            { id: 6, name: 'Salmon', type: ['seafood'], color: '#E89C8B', labelColor: '#FCEFEB', icon: '🍣' },
+            { id: 7, name: 'Cod', type: ['digest'], color: '#B3C6D6', labelColor: '#F0F4F8', icon: '🍥' },
+            { id: 8, name: 'Venison', type: [], color: '#8C7A6B', labelColor: '#F0ECE8', icon: '🦌' },
+            { id: 9, name: 'Turkey', type: [], color: '#D99B66', labelColor: '#F9EFE6', icon: '🦃' },
+            { id: 10, name: 'Mackerel', type: ['seafood'], color: '#6A8CA6', labelColor: '#EBF1F6', icon: '🐠' },
+            { id: 11, name: 'Sardine', type: ['digest'], color: '#A0B4B1', labelColor: '#F2F6F5', icon: '🥫' },
+            { id: 12, name: 'Kitten Milk', type: ['protein'], color: '#F2E3C6', labelColor: '#FDFAFC', icon: '🍼' },
+            { id: 13, name: 'Duck', type: ['digest'], color: '#A67B7A', labelColor: '#F5ECEC', icon: '🦆' },
+            { id: 14, name: 'Scallop', type: ['digest'], color: '#E6D2B5', labelColor: '#FBF7F2', icon: '🦪' },
+            { id: 15, name: 'Shrimp', type: ['seafood'], color: '#E8A39C', labelColor: '#FCF0EF', icon: '🦐' },
+            { id: 16, name: 'Whitefish', type: ['seafood', 'digest'], color: '#E58A8A', labelColor: '#FDF2F2', icon: '🐟' },
+            { id: 17, name: 'Flounder', type: ['seafood'], color: '#E87A70', labelColor: '#FBEBE9', icon: '🐠' },
+            { id: 18, name: 'Chicken Floss', type: ['protein', 'digest'], color: '#D6A6C9', labelColor: '#F8F1F6', icon: '🍘' },
+            { id: 19, name: 'Krill', type: ['seafood'], color: '#C88B9E', labelColor: '#F6EBF0', icon: '🦐' },
+            { id: 20, name: 'Quail', type: ['protein'], color: '#C9C0B3', labelColor: '#F5F3F0', icon: '🕊️' },
+            // 【新增 5 种猫咪安全的食物（第5行，仅TV Time展现）】
+            { id: 21, name: 'Lamb', type: ['protein'], color: '#C08497', labelColor: '#F7E8EB', icon: '🥩' },
+            { id: 22, name: 'Chicken Liver', type: ['protein', 'digest'], color: '#A0522D', labelColor: '#F4EBE6', icon: '🍗' },
+            { id: 23, name: 'Trout', type: ['seafood'], color: '#FF7F50', labelColor: '#FFE6DF', icon: '🐟' },
+            { id: 24, name: 'Tilapia', type: ['seafood', 'digest'], color: '#B0C4DE', labelColor: '#F0F4F8', icon: '🐠' },
+            { id: 25, name: 'Anchovy', type: ['seafood'], color: '#778899', labelColor: '#EBEFF2', icon: '🐟' },
+        ];
+
+        // --- 场景提示语字典 ---
+        const SCENE_HINTS = {
+            'MORNING': '💡 Hint: Cat needs high protein/energy after waking up. Likely prefers Chicken, Beef, Skipjack, Tuna, Kitten Milk.',
+            'UPSET': '💡 Hint: Upset stomach. Needs digestible, low-fat food. Likely prefers Rabbit, Cod, Duck, Sardine, Scallop.',
+            'CRAVING': '💡 Hint: Visual stimulus triggered a strong craving for seafood. Likely prefers Salmon, Mackerel, Shrimp, Skipjack, Tuna.'
+        };
+
+        function App() {
+            const [gameState, setGameState] = useState('START'); // START, PLAYING, GAME_OVER, VICTORY
+            const [playMode, setPlayMode] = useState('MORNING');
+            const [currentDemand, setCurrentDemand] = useState(null);
+            
+            // 核心状态
+            const [l1Cache, setL1Cache] = useState([]); 
+            const [score, setScore] = useState(0);
+            const [timeLeft, setTimeLeft] = useState(25); 
+            const [isLocked, setIsLocked] = useState(false); // 1.5秒锁死界面
+            const [catEmotion, setCatEmotion] = useState('NORMAL'); // NORMAL, HAPPY, ANGRY
+            const [feedbackMsg, setFeedbackMsg] = useState(null); 
+            
+            // 教学模式进度
+            const [tutorialStep, setTutorialStep] = useState(0);
+
+            // 【新增】根据当前模式动态设置 Cache 容量
+            const cacheCapacity = playMode === 'CRAVING' ? 5 : (playMode === 'UPSET' ? 4 : 3);
+
+            // 生成四芒星形状星空粒子
+            const particles = useMemo(() => {
+                return Array.from({ length: 45 }).map((_, i) => ({
+                    id: i,
+                    left: `${Math.random() * 100}%`,
+                    size: `${Math.random() * 15 + 10}px`, 
+                    duration: `${Math.random() * 15 + 10}s`,
+                    delay: `${Math.random() * 10}s`
+                }));
+            }, []);
+
+            // 生成胜利界面的随机鲜花和彩带
+            const confettiPieces = useMemo(() => {
+                const flowers = ['🌸', '🌺', '🌼', '✨', '⭐'];
+                const ribbonColors = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff9f1c'];
+                return Array.from({ length: 80 }).map((_, i) => {
+                    const isRibbon = Math.random() > 0.4;
+                    return {
+                        id: i,
+                        left: `${Math.random() * 100}%`,
+                        duration: `${Math.random() * 3 + 2}s`,
+                        delay: `${Math.random() * 2}s`,
+                        size: isRibbon ? undefined : `${Math.random() * 1.5 + 1}rem`,
+                        icon: isRibbon ? null : flowers[Math.floor(Math.random() * flowers.length)],
+                        color: isRibbon ? ribbonColors[Math.floor(Math.random() * ribbonColors.length)] : null,
+                        width: isRibbon ? `${Math.random() * 0.4 + 0.3}rem` : null,
+                        height: isRibbon ? `${Math.random() * 1.5 + 1}rem` : null
+                    };
+                });
+            }, []);
+
+            // 抛出提示浮窗
+            const showFeedback = useCallback((type, text) => {
+                setFeedbackMsg({ type, text, id: Date.now() });
+                setTimeout(() => setFeedbackMsg(null), 2500);
+            }, []);
+
+            // 强制返回主菜单并清空状态
+            const goHome = useCallback(() => {
+                setGameState('START');
+                setCatEmotion('NORMAL');
+                setIsLocked(false);
+                setScore(0);
+                setTimeLeft(25); 
+                setFeedbackMsg(null);
+                setTutorialStep(0);
+            }, []);
+
+            // 动态生成猫咪需求 (权重精确至 80%)
+            const generateDemand = useCallback((modeStr) => {
+                let pool = [];
+                // 根据模式精准筛选目标 ID
+                if (modeStr === 'MORNING') pool = CANS_DATA.filter(c => [3, 4, 1, 2, 12].includes(c.id));
+                else if (modeStr === 'UPSET') pool = CANS_DATA.filter(c => [5, 7, 13, 11, 14].includes(c.id));
+                else if (modeStr === 'CRAVING') pool = CANS_DATA.filter(c => [6, 10, 15, 1, 2].includes(c.id));
+                
+                // 动态获取当前模式下的可选项，确保不会超出当前显示的列表
+                const availableCans = modeStr === 'MORNING' ? CANS_DATA.slice(0, 15) : (modeStr === 'CRAVING' ? CANS_DATA.slice(0, 25) : CANS_DATA.slice(0, 20));
+
+                // 80% 概率生成对应场景的主力食物
+                if (pool.length > 0 && Math.random() < 0.80) {
+                    return pool[Math.floor(Math.random() * pool.length)];
+                } else {
+                    return availableCans[Math.floor(Math.random() * availableCans.length)];
+                }
+            }, []);
+
+            // 游戏主控：倒计时系统
+            useEffect(() => {
+                let timer;
+                if (gameState === 'PLAYING' && playMode !== 'TUTORIAL' && timeLeft > 0) {
+                    timer = setInterval(() => {
+                        setTimeLeft(prev => prev - 1);
+                    }, 1000);
+                } else if (gameState === 'PLAYING' && playMode !== 'TUTORIAL' && timeLeft <= 0) {
+                    setCatEmotion('ANGRY');
+                    setTimeout(() => setGameState('GAME_OVER'), 1500);
+                }
+                return () => clearInterval(timer);
+            }, [gameState, playMode, timeLeft]); 
+
+            // 开始正常游戏
+            const startGame = (mode) => {
+                setPlayMode(mode);
+                setGameState('PLAYING');
+                setL1Cache([]);
+                setScore(0);
+                setTimeLeft(25); 
+                setCatEmotion('NORMAL');
+                setCurrentDemand(generateDemand(mode));
+            };
+
+            // 开启新手教学
+            const startTutorial = () => {
+                setPlayMode('TUTORIAL');
+                setGameState('PLAYING');
+                setL1Cache([]);
+                setScore(0);
+                setTimeLeft(25); 
+                setCatEmotion('NORMAL');
+                setTutorialStep(0);
+                setCurrentDemand(CANS_DATA.find(c => c.id === 3)); // 强制目标鸡肉
+            };
+
+            // ================= 拖放核心逻辑 (Drag & Drop) =================
+            
+            const handleDragStart = (e, source, canId) => {
+                if (isLocked || gameState === 'VICTORY') {
+                    e.preventDefault();
+                    return;
+                }
+                
+                if (playMode === 'TUTORIAL') {
+                    if (tutorialStep === 3 && (source !== 'MEMORY' || canId !== 3)) { e.preventDefault(); return; }
+                    if (tutorialStep === 4 && (source !== 'CACHE' || canId !== 3)) { e.preventDefault(); return; }
+                    if (tutorialStep === 5 && source !== 'CACHE') { e.preventDefault(); return; }
+                }
+
+                e.dataTransfer.setData('source', source);
+                e.dataTransfer.setData('canId', canId);
+            };
+
+            const handleDragOver = (e) => { e.preventDefault(); };
+
+            // Drop 到：双手缓存区
+            const handleDropToHands = (e) => {
+                e.preventDefault();
+                if (isLocked) return;
+                
+                const source = e.dataTransfer.getData('source');
+                const canId = parseInt(e.dataTransfer.getData('canId'));
+                if (!canId || source !== 'MEMORY') return;
+
+                const draggedCan = CANS_DATA.find(c => c.id === canId);
+
+                // 【修改】动态判断 Cache 容量限制
+                if (l1Cache.length >= cacheCapacity) {
+                    showFeedback('WARNING', 'Cache (Hands) is full! Drag items to trash first!');
+                    return;
+                }
+
+                setIsLocked(true);
+                setTimeout(() => {
+                    if (timeLeft > 0 && gameState !== 'VICTORY') {
+                        setL1Cache(prev => [draggedCan, ...prev]);
+                    }
+                    setIsLocked(false);
+                    if (playMode === 'TUTORIAL' && tutorialStep === 3) setTutorialStep(4);
+                }, 1500);
+            };
+
+            // Drop 到：垃圾桶
+            const handleDropToTrash = (e) => {
+                e.preventDefault();
+                const source = e.dataTransfer.getData('source');
+                const canId = parseInt(e.dataTransfer.getData('canId'));
+                
+                if (!canId || source !== 'CACHE') return;
+
+                setL1Cache(prev => prev.filter(c => c.id !== canId));
+                showFeedback('EVICT', 'Discarded! Cache space freed.');
+
+                if (playMode === 'TUTORIAL' && tutorialStep === 5) setTutorialStep(6);
+            };
+
+            // Drop 到：猫咪身上
+            const handleDropToCat = (e) => {
+                e.preventDefault();
+                const source = e.dataTransfer.getData('source');
+                const canId = parseInt(e.dataTransfer.getData('canId'));
+
+                if (!canId) return;
+                
+                if (source === 'MEMORY') {
+                    showFeedback('WARNING', 'Too far! Must drag food from Main Memory to [Cache (Hands)] first!');
+                    return;
+                }
+
+                if (source === 'CACHE') {
+                    const draggedCan = CANS_DATA.find(c => c.id === canId);
+                    
+                    if (canId === currentDemand.id) {
+                        setL1Cache(prev => {
+                            const newCache = prev.filter(c => c.id !== canId);
+                            return [draggedCan, ...newCache];
+                        });
+
+                        const newScore = score + 10;
+                        setScore(newScore);
+
+                        // 胜利机制判定
+                        if (newScore >= 100 && playMode !== 'TUTORIAL') {
+                            setCatEmotion('HAPPY');
+                            showFeedback('HIT', 'Perfect score! Cat is highly satisfied!');
+                            setTimeout(() => {
+                                setGameState('VICTORY');
+                            }, 500); 
+                        } else {
+                            // 原有正常流程
+                            setCatEmotion('HAPPY');
+                            showFeedback('HIT', 'CACHE HIT! 0-latency feeding correct, cat is happy!');
+                            
+                            if (playMode === 'TUTORIAL' && tutorialStep === 4) {
+                                setTutorialStep(5);
+                                setL1Cache([draggedCan, CANS_DATA[1], CANS_DATA[4]]); 
+                                setTimeout(() => setCatEmotion('NORMAL'), 1500);
+                                return;
+                            }
+
+                            if (timeLeft > 0) {
+                                setTimeLeft(25); 
+                                setCurrentDemand(generateDemand(playMode));
+                                setTimeout(() => {
+                                    setCatEmotion(prev => prev === 'HAPPY' ? 'NORMAL' : prev);
+                                }, 1200);
+                            }
+                        }
+
+                    } else {
+                        setCatEmotion('ANGRY');
+                        setScore(s => Math.max(0, s - 5));
+                        showFeedback('ERROR', `Wrong food! Master wants [${currentDemand.name}]! Penalty!`);
+                        setTimeout(() => { if(timeLeft > 0 && gameState !== 'VICTORY') setCatEmotion('NORMAL'); }, 2000);
+                    }
+                }
+            };
+
+            // 背景色
+            const getBgStyle = () => {
+                if (gameState === 'START' || gameState === 'GAME_OVER' || gameState === 'VICTORY') return 'linear-gradient(110deg, #A8C0CB 0%, #D49FA8 100%)';
+                if (playMode === 'MORNING') return 'linear-gradient(110deg, #E6DEDD 0%, #F5E3E0 45%, #E8B4B8 100%)';
+                if (playMode === 'UPSET') return 'linear-gradient(110deg, #E2E6E4 0%, #C4D7D1 45%, #A1B5B1 100%)';
+                if (playMode === 'CRAVING') return 'linear-gradient(110deg, #DCE5EC 0%, #B8C6D9 45%, #8BA6D5 100%)';
+                return 'linear-gradient(110deg, #EADDD7 0%, #EADDD7 45%, #CBB5B1 45%, #CBB5B1 100%)'; 
+            };
+
+            // 渲染罐头
+            const RenderCan = ({ data, source }) => {
+                const isTarget = currentDemand && currentDemand.id === data.id;
+                let highlightClass = '';
+                
+                if (playMode === 'TUTORIAL') {
+                    if (tutorialStep === 3 && source === 'MEMORY' && data.id === 3) highlightClass = 'ring-4 ring-purple-500 scale-105 z-10';
+                    if (tutorialStep === 4 && source === 'CACHE' && data.id === 3) highlightClass = 'ring-4 ring-purple-500 scale-105 z-10';
+                    if (tutorialStep === 5 && source === 'CACHE') highlightClass = 'ring-2 ring-red-400';
+                } else {
+                    if (isTarget && source === 'MEMORY' && !l1Cache.find(c => c.id === data.id)) highlightClass = 'ring-4 ring-yellow-400';
+                    if (isTarget && source === 'CACHE') highlightClass = 'ring-4 ring-yellow-400 scale-105 z-10';
+                }
+                
+                return (
+                    <div 
+                        draggable={!isLocked && gameState !== 'VICTORY'} 
+                        onDragStart={(e) => handleDragStart(e, source, data.id)}
+                        className={`relative w-16 h-14 md:w-20 md:h-16 rounded-[2rem] cursor-grab active:cursor-grabbing transition-all duration-300 transform hover:scale-110 hover:-translate-y-2 flex flex-col items-center justify-center shadow-[0_10px_15px_rgba(0,0,0,0.2)] bg-opacity-90 ${highlightClass} ${isLocked ? 'opacity-50 grayscale' : ''}`}
+                        style={{ background: `linear-gradient(145deg, ${data.color}ee, ${data.color}99)`, boxShadow: `inset 0 8px 10px rgba(255,255,255,0.6), inset 0 -5px 10px rgba(0,0,0,0.3), 0 10px 15px rgba(0,0,0,0.2)` }}
+                    >
+                        <div className="absolute top-0 w-full h-4 rounded-full border border-gray-300 bg-gradient-to-b from-gray-100 to-gray-300 shadow-inner">
+                             <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-3 h-2 border border-gray-400 rounded-full opacity-60"></div>
+                        </div>
+                        <div className="z-10 text-xl md:text-2xl mt-3 filter drop-shadow-md pointer-events-none">{data.icon}</div>
+                        <div className="z-10 absolute -bottom-2 px-2 py-0.5 rounded shadow-sm text-[10px] md:text-xs font-bold text-gray-800 tracking-wider whitespace-nowrap pointer-events-none" style={{ backgroundColor: data.labelColor, border: `1px solid ${data.color}` }}>
+                            {data.name}
+                        </div>
+                    </div>
+                );
+            };
+
+            // 【修改】根据情境动态生成主内存需要渲染的食物列表
+            const displayedCans = playMode === 'MORNING' ? CANS_DATA.slice(0, 15) : (playMode === 'CRAVING' ? CANS_DATA.slice(0, 25) : CANS_DATA.slice(0, 20));
+
+            return (
+                <div className="w-full h-screen overflow-hidden flex flex-col font-sans select-none relative transition-colors duration-1000" style={{ background: getBgStyle() }}>
+                    
+                    {/* 拿取食物封锁界面变为全力搬运中 */}
+                    {isLocked && gameState === 'PLAYING' && timeLeft > 0 && catEmotion !== 'ANGRY' && (
+                         <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm transition-all duration-300">
+                             <div className="text-white text-3xl md:text-4xl font-black drop-shadow-2xl flex flex-col items-center">
+                                 <div className="text-7xl mb-4 animate-bounce">🏃💦</div>
+                                 Master is carrying with all might...
+                                 <span className="text-xl mt-4 text-red-300 font-bold bg-black/60 px-6 py-2 rounded-full animate-pulse">CACHE MISS! (Time is still ticking)</span>
+                             </div>
+                         </div>
+                    )}
+
+                    {/* 全局反馈浮窗 */}
+                    {feedbackMsg && (
+                        <div className="fixed top-36 left-1/2 transform -translate-x-1/2 z-[110] flex flex-col pointer-events-none">
+                            <div className={`px-8 py-4 rounded-2xl shadow-2xl backdrop-blur-md border-2 
+                                    ${feedbackMsg.type === 'HIT' ? 'bg-green-500/95 border-green-300 text-white' : ''}
+                                    ${feedbackMsg.type === 'ERROR' ? 'bg-red-600/95 border-red-300 text-white text-2xl animate-bounce' : ''}
+                                    ${feedbackMsg.type === 'WARNING' ? 'bg-orange-500/95 border-orange-300 text-white text-xl' : ''}
+                                    ${feedbackMsg.type === 'EVICT' ? 'bg-purple-500/95 border-purple-300 text-white' : ''}
+                                `}
+                            >
+                                <div className="font-bold tracking-wide text-center">{feedbackMsg.text}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 深色背景、星空四芒星粒子、3D立体玻璃面板、纯英文标题入口 */}
+                    {gameState === 'START' && (
+                        <div className="absolute inset-0 z-[200] flex items-center justify-center overflow-hidden" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #000000 100%)' }}>
+                            
+                            {/* 渲染四芒星发光动态粒子 */}
+                            {particles.map(p => (
+                                <div key={p.id} className="particle-star" style={{
+                                    left: p.left, width: p.size, height: p.size,
+                                    animationDuration: p.duration, animationDelay: p.delay
+                                }}></div>
+                            ))}
+
+                            {/* 3D 立体玻璃面板 */}
+                            <div className="bg-gray-900/40 p-8 md:p-12 rounded-3xl border border-gray-500/50 shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_2px_2px_rgba(255,255,255,0.2),inset_0_-2px_5px_rgba(0,0,0,0.5)] flex flex-col items-center backdrop-blur-2xl max-w-5xl w-[95%] z-10 relative">
+                                <h1 className="text-4xl md:text-6xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.4)] mb-2 tracking-widest text-center" style={{ textShadow: '0 4px 6px rgba(0,0,0,0.5)' }}>Cache or Chaos</h1>
+                                <p className="text-gray-200 font-bold mb-8 bg-white/10 px-6 py-3 rounded-full shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_4px_6px_rgba(0,0,0,0.4)] text-center border border-white/20 backdrop-blur-md">
+                                    Master the locality of love through zero-latency feeding.
+                                </p>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full mt-4">
+                                    <button onClick={startTutorial} className="group glass-panel bg-white/5 border border-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_8px_15px_rgba(0,0,0,0.4)] p-4 hover:bg-white/20 transition-all text-center flex flex-col items-center border-t-4 border-t-purple-400">
+                                        <div className="bg-purple-500 p-3 rounded-full text-white shadow-lg mb-2"><IconHeart className="w-7 h-7"/></div>
+                                        <div className="text-white font-bold text-lg">Guide</div><div className="text-gray-300 text-xs">Tutorial Mode</div>
+                                    </button>
+                                    <button onClick={() => startGame('MORNING')} className="group glass-panel bg-white/5 border border-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_8px_15px_rgba(0,0,0,0.4)] p-4 hover:bg-white/20 transition-all text-center flex flex-col items-center border-t-4 border-t-yellow-400">
+                                        <div className="bg-yellow-500 p-3 rounded-full text-white shadow-lg mb-2"><IconClock className="w-7 h-7"/></div>
+                                        <div className="text-white font-bold text-lg">Sunrise</div><div className="text-gray-300 text-xs">High Protein</div>
+                                    </button>
+                                    <button onClick={() => startGame('UPSET')} className="group glass-panel bg-white/5 border border-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_8px_15px_rgba(0,0,0,0.4)] p-4 hover:bg-white/20 transition-all text-center flex flex-col items-center border-t-4 border-t-green-400">
+                                        <div className="bg-green-500 p-3 rounded-full text-white shadow-lg mb-2"><IconActivity className="w-7 h-7"/></div>
+                                        <div className="text-white font-bold text-lg">Emergency</div><div className="text-gray-300 text-xs">Digestible</div>
+                                    </button>
+                                    <button onClick={() => startGame('CRAVING')} className="group glass-panel bg-white/5 border border-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_8px_15px_rgba(0,0,0,0.4)] p-4 hover:bg-white/20 transition-all text-center flex flex-col items-center border-t-4 border-t-blue-400">
+                                        <div className="bg-blue-500 p-3 rounded-full text-white shadow-lg mb-2"><IconTv className="w-7 h-7"/></div>
+                                        <div className="text-white font-bold text-lg">TV Time</div><div className="text-gray-300 text-xs">Seafood Craze</div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VICTORY 胜利界面 */}
+                    {gameState === 'VICTORY' && (
+                        <div className="absolute inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md overflow-hidden">
+                            {/* 渲染动态彩带鲜花 */}
+                            {confettiPieces.map(c => (
+                                <div key={c.id} className="confetti-piece" style={{
+                                    left: c.left,
+                                    animationDuration: c.duration,
+                                    animationDelay: c.delay,
+                                    fontSize: c.size,
+                                    backgroundColor: c.color,
+                                    width: c.width,
+                                    height: c.height
+                                }}>
+                                    {c.icon}
+                                </div>
+                            ))}
+                            <div className="bg-white/20 border-2 border-green-400 p-12 rounded-3xl shadow-[0_0_50px_rgba(74,222,128,0.5)] flex flex-col items-center max-w-2xl w-[90%] backdrop-blur-xl z-10">
+                                <h1 className="text-6xl md:text-8xl font-black text-green-400 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] mb-4 text-center tracking-wider">VICTORY!</h1>
+                                <p className="text-white text-2xl mb-8 text-center font-bold">100 Points! Cat is fully satisfied!</p>
+                                <button onClick={goHome} className="px-12 py-4 bg-green-500 hover:bg-green-400 text-white font-black rounded-full text-2xl shadow-[0_0_20px_rgba(74,222,128,0.6)] transition-all">Play Again</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* GAME OVER 界面 */}
+                    {gameState === 'GAME_OVER' && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+                            <div className="bg-red-900/40 border-2 border-red-500 p-12 rounded-3xl shadow-2xl flex flex-col items-center max-w-2xl w-[90%]">
+                                <h1 className="text-5xl md:text-7xl font-black text-red-500 drop-shadow-lg mb-4 text-center">GAME OVER</h1>
+                                <p className="text-white text-xl mb-2 text-center">Over 25s without feeding, the cat is completely furious!</p>
+                                <p className="text-yellow-300 text-3xl font-bold mb-8 text-center">Final Score: {score}</p>
+                                <button onClick={goHome} className="px-10 py-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded-full text-xl shadow-[0_0_20px_rgba(239,68,68,0.5)] transition-all">Re-apply for Job</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 顶部栏（包含场景提示和教学） */}
+                    {(gameState === 'PLAYING' || gameState === 'VICTORY') && (
+                        <div className="w-full flex-shrink-0 relative z-30 px-6 py-3 flex flex-col gap-2 border-b border-white/20 bg-white/30 backdrop-blur-md shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <button onClick={goHome} className="bg-white/60 hover:bg-white/80 px-4 py-2 rounded-full text-gray-900 font-bold flex items-center space-x-2 border border-white/60 shadow-sm whitespace-nowrap">
+                                    <IconArrowLeft className="w-4 h-4" /><span className="whitespace-nowrap">Exit</span>
+                                </button>
+
+                                {playMode !== 'TUTORIAL' && SCENE_HINTS[playMode] && (
+                                    <div className="bg-yellow-300/90 border-4 border-yellow-500 text-yellow-900 font-black px-8 py-3 rounded-2xl shadow-[0_0_20px_rgba(234,179,8,0.8)] text-base md:text-xl animate-breathe-warning">
+                                        {SCENE_HINTS[playMode]}
+                                    </div>
+                                )}
+
+                                {playMode !== 'TUTORIAL' && (
+                                    <div className="text-gray-900 font-black text-2xl px-8 py-2 bg-white/50 rounded-full border border-white/60 shadow-sm">
+                                        Score: {score}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 教学模式专属引导面板 */}
+                            {playMode === 'TUTORIAL' && (
+                                <div className="bg-purple-50 border-4 border-purple-500 rounded-2xl p-4 shadow-xl flex items-center justify-between w-full animate-breathe">
+                                    <div className="flex items-center space-x-3 w-full">
+                                        <IconInfo className="text-purple-600 w-10 h-10 flex-shrink-0 animate-bounce" />
+                                        <p className="text-purple-900 font-black text-base md:text-[18px] leading-relaxed flex-1 drop-shadow-sm">
+                                            {tutorialStep === 0 && "Welcome to the Cat Servant Training! Click \"Next\" to learn the interface."}
+                                            {tutorialStep === 1 && "[Step 1] On the right is your [Main Memory (Cabinet)]. Taking cans from here incurs a 1.5s delay penalty!"}
+                                            {tutorialStep === 2 && "[Step 2] Below is your [Cache (Hands)]. You must prep the food in your hands before feeding to achieve perfect 0-latency!"}
+                                            {tutorialStep === 3 && "[Step 3] Practice! Master wants [Chicken🍗]. Drag [Chicken] from the right cabinet down to your [Cache (Hands)]!"}
+                                            {tutorialStep === 4 && "[Step 4] (CACHE MISS) 1.5s penalty applied. Now that the food is in your hands, drag [Chicken] to the cat on the left!"}
+                                            {tutorialStep === 5 && "[Step 5] (CACHE HIT) Instant feeding! To free up space, drag any can from your hands to the [Trash] on the bottom right!"}
+                                            {tutorialStep === 6 && "Congratulations! You mastered the core caching strategy. Return to the main menu to start."}
+                                        </p>
+                                        <div className="flex-shrink-0 ml-4">
+                                            {tutorialStep === 0 && <button onClick={()=>setTutorialStep(1)} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-black shadow-lg">Next</button>}
+                                            {tutorialStep === 1 && <button onClick={()=>setTutorialStep(2)} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-black shadow-lg">Next</button>}
+                                            {tutorialStep === 2 && <button onClick={()=>setTutorialStep(3)} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-black shadow-lg">Start Practice</button>}
+                                            {tutorialStep === 6 && <button onClick={goHome} className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-black shadow-lg">Finish Tutorial</button>}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ================= 主体游戏区域 ================= */}
+                    <div className="flex-1 flex overflow-hidden">
+                        
+                        {/* 左侧：猫咪图片与需求 */}
+                        <div className="w-[45%] h-full relative p-6 flex flex-col justify-end border-r border-white/40">
+                            
+                            {/* 场景：早晨 - 左上角 */}
+                            {(gameState === 'PLAYING' || gameState === 'VICTORY') && playMode === 'MORNING' && (
+                                <div className="absolute top-10 left-10 z-0 pointer-events-none">
+                                    <div className="text-8xl md:text-[120px] drop-shadow-[0_0_30px_rgba(250,204,21,0.8)]">🌞</div>
+                                    <div className="absolute top-10 left-48 text-6xl opacity-70">☁️</div>
+                                </div>
+                            )}
+
+                            {/* 电视机 */}
+                            {(gameState === 'PLAYING' || gameState === 'VICTORY') && playMode === 'CRAVING' && (
+                                <div className="absolute top-32 md:top-40 right-4 md:right-10 z-20 w-40 h-32 md:w-56 md:h-40 bg-gray-800 rounded-xl border-[6px] border-gray-900 flex flex-col shadow-2xl transform rotate-6 translate-x-[2.5cm] translate-y-[5cm] pointer-events-none overflow-hidden">
+                                    <div className="w-full h-full bg-cyan-200 rounded-sm overflow-hidden relative flex flex-col p-2">
+                                         <div className="absolute top-1 w-full text-4xl md:text-5xl animate-swim-1">🐟</div>
+                                         <div className="absolute top-1/3 w-full text-4xl md:text-5xl animate-swim-2 scale-x-[-1]">🐠</div>
+                                         <div className="absolute bottom-1 w-full text-4xl md:text-5xl animate-swim-3">🐡</div>
+                                    </div>
+                                    <div className="h-2 w-full bg-gray-900 flex justify-center gap-2 items-center z-10">
+                                        <div className="w-1 h-1 bg-red-500 rounded-full"></div>
+                                        <div className="w-1 h-1 bg-green-500 rounded-full"></div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex-1 flex flex-col items-center justify-center relative z-10">
+                                
+                                {currentDemand && (gameState === 'PLAYING' || gameState === 'VICTORY') && (
+                                    <div className="absolute top-[2%] -mt-[0.5cm] glass-panel p-5 rounded-t-3xl rounded-br-3xl flex flex-col items-center z-20 shadow-[0_10px_20px_rgba(0,0,0,0.2)] bg-white/70">
+                                        <div className="text-gray-900 font-black mb-1 text-base">I want to eat:</div>
+                                        <div className="w-40 h-6 bg-gray-300 rounded-full mb-4 border-2 border-white overflow-hidden relative shadow-inner">
+                                            <div className={`h-full transition-all duration-1000 linear flex items-center justify-end pr-2 text-xs font-bold text-white ${playMode === 'TUTORIAL' ? 'bg-purple-500' : (timeLeft <= 5 ? 'bg-red-600 animate-pulse' : 'bg-green-500')}`}
+                                                 style={{ width: playMode === 'TUTORIAL' ? '100%' : `${(timeLeft / 25) * 100}%` }}>
+                                                {playMode === 'TUTORIAL' ? 'Time Stopped' : `${timeLeft}s`}
+                                            </div>
+                                        </div>
+                                        <RenderCan data={currentDemand} source="DEMAND" />
+                                    </div>
+                                )}
+
+                                {/* 【真实猫咪图片容器】根据模式动态切换图片，为情境3和4增加向上的位移 */}
+                                <div onDragOver={handleDragOver} onDrop={handleDropToCat}
+                                     className={`relative w-[320px] h-[320px] md:w-[480px] md:h-[480px] z-10 flex justify-center items-end mt-16 transition-all duration-300
+                                     ${catEmotion === 'HAPPY' ? 'scale-110 drop-shadow-[0_0_60px_rgba(74,222,128,0.9)]' : ''}
+                                     ${catEmotion === 'ANGRY' ? 'shake drop-shadow-[0_0_60px_rgba(239,68,68,0.9)]' : ''}
+                                     ${(tutorialStep === 4) ? 'ring-8 ring-purple-500 ring-offset-4 rounded-full' : ''}`}
+                                     style={{
+                                         WebkitMaskImage: 'radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%)',
+                                         maskImage: 'radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%)',
+                                     }}
+                                     >
+                                     
+                                    {/* 场景：拉肚子啦 */}
+                                    {(gameState === 'PLAYING' || gameState === 'VICTORY') && playMode === 'UPSET' && (
+                                        <div className="absolute top-10 left-0 z-0 pointer-events-none flex gap-4 opacity-80">
+                                            <div className="text-7xl md:text-8xl drop-shadow-lg">🤢</div>
+                                            <div className="text-6xl md:text-7xl drop-shadow-lg translate-y-8">💊</div>
+                                        </div>
+                                    )}
+
+                                    <img src={playMode === 'CRAVING' ? '0327.jpg' : (playMode === 'UPSET' ? '1307.jpg' : '89757.jpg')} alt="Cute Cat" className={`object-contain w-full h-full z-10 relative drop-shadow-2xl mix-blend-multiply ${(playMode === 'UPSET' || playMode === 'CRAVING') ? '-translate-y-[1cm]' : ''}`}/>
+                                    
+                                    <div className="absolute bottom-2 w-[85%] h-14 bg-white/30 border-4 border-dashed border-white/60 rounded-full z-0 flex items-center justify-center pointer-events-none shadow-inner">
+                                        <span className="text-gray-800 font-black text-lg opacity-80 drop-shadow-md">Drag food here to feed</span>
+                                    </div>
+                                </div>
+
+                                {/* 表情反馈 */}
+                                {catEmotion === 'HAPPY' && <div className="absolute top-[35%] text-7xl animate-bounce z-50 drop-shadow-md">💖🥰💖</div>}
+                                {catEmotion === 'ANGRY' && <div className="absolute top-[35%] text-7xl animate-bounce z-50 drop-shadow-md">💢😾💢</div>}
+                            </div>
+                        </div>
+
+                        {/* 右侧：主内存 */}
+                        <div className="w-[55%] h-full relative p-6 flex flex-col items-center overflow-y-auto pb-48">
+                            <div className="w-full max-w-2xl mt-4">
+                                <div className="flex justify-between items-end mb-2 px-4">
+                                    <h3 className="text-gray-900 font-black text-2xl flex items-center space-x-3">
+                                        <span>Main Memory (Cabinet)</span>
+                                        <span className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded-md border border-red-300 shadow-sm">1.5s lock on fetch</span>
+                                    </h3>
+                                </div>
+                                
+                                <div className={`glass-panel p-6 w-full shadow-[0_15px_30px_rgba(0,0,0,0.15)] bg-white/30 ${tutorialStep === 1 || tutorialStep === 3 ? 'ring-4 ring-purple-500 bg-white/50' : ''}`}>
+                                    <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-y-12 gap-x-4 place-items-center mt-2">
+                                        {/* 【修改】使用动态的食物列表进行渲染 */}
+                                        {displayedCans.map((can) => (
+                                            <div key={can.id} className="relative w-full flex justify-center group">
+                                                <RenderCan data={can} source="MEMORY" />
+                                                <div className="absolute -bottom-4 w-[110%] h-3 bg-white/70 rounded-[100%] shadow-[0_5px_10px_rgba(0,0,0,0.1)] backdrop-blur-sm border border-white/60"></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ================= 底部：缓存与垃圾桶 ================= */}
+                    <div className="absolute bottom-0 left-0 w-full h-44 bg-white/40 backdrop-blur-2xl border-t border-white/70 shadow-[0_-15px_40px_rgba(0,0,0,0.15)] flex items-center justify-center space-x-12 px-8 z-40">
+                        {/* L1 缓存区 */}
+                        <div onDragOver={handleDragOver} onDrop={handleDropToHands} className={`flex flex-col bg-white/50 p-3 rounded-2xl border-4 border-dashed border-white/90 shadow-inner ${tutorialStep === 2 || tutorialStep === 3 ? 'border-purple-500 bg-purple-100/40 ring-4 ring-purple-300' : ''}`}>
+                            <div className="flex justify-between items-center mb-3 px-2">
+                                <h3 className="text-gray-900 font-black text-xl flex items-center space-x-2">
+                                    <span>Cache (Hands)</span>
+                                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded border border-green-300 shadow-sm">0-Latency Zone</span>
+                                </h3>
+                                {/* 【修改】动态展示当前模式下的缓存容量上限 */}
+                                <span className={`px-4 py-1 rounded text-white font-bold text-sm shadow-md ${l1Cache.length >= cacheCapacity ? 'bg-red-500' : 'bg-gray-700'}`}>
+                                    {l1Cache.length}/{cacheCapacity} Capacity
+                                </span>
+                            </div>
+                            
+                            <div className="flex space-x-4 md:space-x-6 relative">
+                                {/* 【修改】根据 cacheCapacity 动态生成空槽位 */}
+                                {Array.from({ length: cacheCapacity }).map((_, index) => (
+                                    <div key={index} className="relative z-10">
+                                        <div className="w-24 h-24 md:w-28 md:h-28 glass-panel rounded-2xl flex items-center justify-center border-white shadow-lg bg-white/80">
+                                            {l1Cache[index] ? (
+                                                <div className="relative">
+                                                    {index === 0 && <span className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-[10px] text-green-900 font-bold bg-green-300 px-3 py-0.5 rounded-full z-20 shadow-md border border-green-500 tracking-wide whitespace-nowrap">New</span>}
+                                                    <RenderCan data={l1Cache[index]} source="CACHE" />
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400/60 text-base font-bold flex flex-col items-center">Empty</span>
+                                            )}
+                                        </div>
+                                        <div className="absolute -bottom-3 left-0 w-full h-4 bg-white/80 rounded-full blur-sm"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="w-px h-28 bg-white/70 mx-4 hidden md:block"></div>
+
+                        {/* 垃圾桶区 */}
+                        <div className="flex flex-col items-center">
+                            <div className="text-gray-900 font-black text-sm mb-2 px-4 py-1 bg-white/60 rounded-full shadow-sm border border-white whitespace-nowrap">Clear Space</div>
+                            <div onDragOver={handleDragOver} onDrop={handleDropToTrash} className={`w-32 h-36 glass-panel bg-red-100/40 hover:bg-red-200/60 transition-colors border-4 border-dashed border-red-400/80 rounded-xl flex flex-col items-center justify-center shadow-inner relative group cursor-pointer p-2 ${tutorialStep === 5 ? 'ring-4 ring-purple-500 scale-110' : ''}`}>
+                                <IconTrash className="text-red-600/90 w-12 h-12 mb-2 group-hover:scale-110 transition-transform drop-shadow-md" />
+                                <div className="text-red-700/90 text-sm font-black tracking-wide whitespace-nowrap text-center">Drop to Trash</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
